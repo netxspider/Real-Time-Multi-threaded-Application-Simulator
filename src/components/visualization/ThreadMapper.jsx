@@ -1,6 +1,8 @@
 // src/components/visualization/ThreadMapper.jsx
 import React, { useRef, useEffect, useState } from 'react';
 import { useSimStore } from '../../store/simulationStore';
+import { buildMappings } from '../../engine/threadModel';
+import { getKernelCount } from '../../engine/threadModel';
 
 const STATE_COLORS = {
   NEW: '#64748b',
@@ -10,18 +12,10 @@ const STATE_COLORS = {
   TERMINATED: '#1f2937',
 };
 
-const STATE_GLOW = {
-  NEW: 'none',
-  READY: '0 0 10px #22c55e88',
-  RUNNING: '0 0 16px #3b82f6cc',
-  BLOCKED: '0 0 10px #ef444488',
-  TERMINATED: 'none',
-};
-
 const THREAD_R = 14;
 
 export default function ThreadMapper() {
-  const { userThreads, kernelThreads, mappings, cpuCurrentThread, model } = useSimStore();
+  const { userThreads, kernelThreads, mappings, cpuCurrentThread, model, numUserThreads, threadConfigs } = useSimStore();
   const svgRef = useRef(null);
   const [dims, setDims] = useState({ w: 600, h: 300 });
 
@@ -40,26 +34,51 @@ export default function ThreadMapper() {
   const colKernel = w / 2;
   const colCPU = w - padX - 40;
 
-  // Layout user threads
-  const userPositions = userThreads.map((t, i) => {
-    const total = userThreads.length;
+  // ── Build display data ──────────────────────────────────────────────────
+  // If threads exist (sim started), use them. Otherwise build a preview from config.
+  const hasThreads = userThreads.length > 0;
+
+  const displayUserThreads = hasThreads
+    ? userThreads
+    : threadConfigs.slice(0, numUserThreads).map((cfg, i) => ({
+        id: cfg.id,
+        state: 'NEW',
+        color: `hsl(${(i * 47) % 360}, 70%, 60%)`,
+        burstTime: cfg.burstTime,
+        remainingTime: cfg.burstTime,
+        arrivalTime: cfg.arrivalTime,
+      }));
+
+  const kCount = hasThreads ? kernelThreads.length : getKernelCount(model, numUserThreads);
+  const displayKernelThreads = hasThreads
+    ? kernelThreads
+    : Array.from({ length: kCount }, (_, i) => ({
+        id: `K${i + 1}`,
+        currentUserThread: null,
+      }));
+
+  // Build mappings for preview mode
+  const displayMappings = hasThreads
+    ? mappings
+    : buildMappings(model, displayUserThreads, displayKernelThreads);
+
+  // ── Layout ──────────────────────────────────────────────────────────────
+  const userPositions = displayUserThreads.map((t, i) => {
+    const total = displayUserThreads.length;
     const spacing = Math.min(40, (h - 60) / Math.max(total, 1));
     const startY = (h - spacing * (total - 1)) / 2;
     return { x: colUser, y: startY + i * spacing, thread: t };
   });
 
-  // Layout kernel threads
-  const kernelPositions = kernelThreads.map((k, i) => {
-    const total = kernelThreads.length;
+  const kernelPositions = displayKernelThreads.map((k, i) => {
+    const total = displayKernelThreads.length;
     const spacing = Math.min(48, (h - 60) / Math.max(total, 1));
     const startY = (h - spacing * (total - 1)) / 2;
     return { x: colKernel, y: startY + i * spacing, thread: k };
   });
 
-  // CPU box position
   const cpuY = h / 2;
 
-  // Build kernel positions map
   const kernelPosMap = {};
   for (const kp of kernelPositions) kernelPosMap[kp.thread.id] = kp;
 
@@ -82,27 +101,28 @@ export default function ThreadMapper() {
 
         {/* ── User → Kernel lines ── */}
         {userPositions.map(({ x, y, thread }) => {
-          const kId = mappings[thread.id];
+          const kId = displayMappings[thread.id];
           const kPos = kernelPosMap[kId];
           if (!kPos) return null;
           const isActive = thread.state === 'RUNNING' || thread.state === 'READY';
+          const isNew = thread.state === 'NEW';
           return (
             <line
               key={`uk-${thread.id}`}
               x1={x + THREAD_R} y1={y} x2={kPos.x - THREAD_R} y2={kPos.y}
-              stroke={isActive ? '#4f46e5' : '#2d2d42'}
+              stroke={isActive ? '#4f46e5' : isNew ? '#4b5563' : '#2d2d42'}
               strokeWidth={isActive ? 2 : 1}
               strokeDasharray={isActive ? '6 3' : '4 4'}
               className={isActive ? 'flow-line' : ''}
-              opacity={thread.state === 'TERMINATED' ? 0.2 : 0.7}
+              opacity={thread.state === 'TERMINATED' ? 0.2 : isNew ? 0.5 : 0.7}
             />
           );
         })}
 
         {/* ── Kernel → CPU lines ── */}
         {kernelPositions.map(({ x, y, thread }) => {
-          const hasActive = userThreads.some(
-            u => mappings[u.id] === thread.id && u.state === 'RUNNING'
+          const hasActive = displayUserThreads.some(
+            u => displayMappings[u.id] === thread.id && u.state === 'RUNNING'
           );
           return (
             <line
@@ -123,6 +143,7 @@ export default function ThreadMapper() {
           const isRunning = thread.state === 'RUNNING';
           const isBlocked = thread.state === 'BLOCKED';
           const isTerminated = thread.state === 'TERMINATED';
+          const isNew = thread.state === 'NEW';
           return (
             <g key={thread.id} transform={`translate(${x}, ${y})`}>
               {isRunning && (
@@ -133,7 +154,7 @@ export default function ThreadMapper() {
                 r={THREAD_R} fill={isTerminated ? '#111118' : color}
                 stroke={isTerminated ? '#374151' : color}
                 strokeWidth="2"
-                opacity={isTerminated ? 0.4 : 1}
+                opacity={isTerminated ? 0.4 : isNew ? 0.7 : 1}
                 filter={isRunning ? 'url(#glow-running)' : isBlocked ? 'url(#glow-blocked)' : ''}
               />
               <text textAnchor="middle" dominantBaseline="central"
@@ -152,15 +173,21 @@ export default function ThreadMapper() {
                   />
                 </g>
               )}
+              {/* State label below */}
+              <text textAnchor="middle" y={THREAD_R + 15}
+                fontSize="7" fill={isNew ? '#64748b' : color} opacity="0.8">
+                {thread.state}
+              </text>
             </g>
           );
         })}
 
         {/* ── Kernel Thread circles ── */}
         {kernelPositions.map(({ x, y, thread }) => {
-          const hasRunning = userThreads.some(
-            u => mappings[u.id] === thread.id && u.state === 'RUNNING'
+          const hasRunning = displayUserThreads.some(
+            u => displayMappings[u.id] === thread.id && u.state === 'RUNNING'
           );
+          const mappedCount = displayUserThreads.filter(u => displayMappings[u.id] === thread.id).length;
           return (
             <g key={thread.id} transform={`translate(${x}, ${y})`}>
               <circle r={12} fill={hasRunning ? '#7c3aed' : '#1e1e2e'}
@@ -170,6 +197,13 @@ export default function ThreadMapper() {
                 fontSize="7" fontWeight="bold" fill={hasRunning ? '#fff' : '#6b7280'}>
                 {thread.id}
               </text>
+              {/* Show how many user threads mapped */}
+              {mappedCount > 1 && (
+                <text textAnchor="middle" y={16}
+                  fontSize="6" fill="#6366f1" opacity="0.8">
+                  ×{mappedCount}
+                </text>
+              )}
             </g>
           );
         })}
