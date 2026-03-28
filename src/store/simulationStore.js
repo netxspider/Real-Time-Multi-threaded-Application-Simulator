@@ -13,31 +13,33 @@ function makeLog(msg) {
   return { id: ++_logIdCounter, text: `[${ts}] ${msg}` };
 }
 
-function randomBurst() {
-  return Math.floor(Math.random() * 18) + 3; // 3–20 ticks
-}
-
 function randomPriority() {
   return Math.floor(Math.random() * 10) + 1; // 1–10
 }
 
-function randomArrival(mode, index, total) {
-  if (mode === 'Simultaneous') return 0;
-  if (mode === 'Staggered') return index * 3;
-  return Math.floor(Math.random() * total * 2); // Randomized
+// Build default thread config entries
+function buildDefaultConfigs(count, existingConfigs = []) {
+  return Array.from({ length: count }, (_, i) => {
+    const existing = existingConfigs[i];
+    return {
+      id: `T${i + 1}`,
+      arrivalTime: existing?.arrivalTime ?? 0,
+      burstTime: existing?.burstTime ?? 5,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────
-//  Build initial thread list
+//  Build initial thread list from configs
 // ─────────────────────────────────────────────
-function buildUserThreads(count, arrivalMode) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `T${i + 1}`,
+function buildUserThreads(configs) {
+  return configs.map((cfg, i) => ({
+    id: cfg.id,
     type: 'USER',
     state: 'NEW',
-    arrivalTime: randomArrival(arrivalMode, i, count),
-    burstTime: randomBurst(),
-    remainingTime: 0, // set when thread enters READY
+    arrivalTime: cfg.arrivalTime,
+    burstTime: cfg.burstTime,
+    remainingTime: 0,
     mappedTo: null,
     blockedBy: null,
     priority: randomPriority(),
@@ -59,26 +61,30 @@ function buildKernelThreads(count) {
 // ─────────────────────────────────────────────
 //  Default config
 // ─────────────────────────────────────────────
+const INITIAL_THREAD_COUNT = 5;
+const INITIAL_CONFIGS = buildDefaultConfigs(INITIAL_THREAD_COUNT);
+
 const DEFAULT_CONFIG = {
-  numUserThreads: 5,
+  numUserThreads: INITIAL_THREAD_COUNT,
+  threadConfigs: INITIAL_CONFIGS,
   model: 'One-to-One',
-  arrivalMode: 'Simultaneous',
   algorithm: 'Round Robin',
   timeQuantum: 4,
-  speed: 3, // ticks per second (1–1000)
+  speed: 1, // ticks per second
 };
 
 const DEFAULT_SIM = {
   time: 0,
   isRunning: false,
   isPaused: false,
+  simulationCompleted: false,
   userThreads: [],
   kernelThreads: [],
-  mappings: {},       // { userId: kernelId }
+  mappings: {},
   readyQueue: [],
   blockedQueue: [],
-  ganttEntries: [],   // [{ threadId, start, end, color }]
-  cpuUtilHistory: [], // [{ t, util }]
+  ganttEntries: [],
+  cpuUtilHistory: [],
   eventLogs: [],
   quantumRemaining: 0,
   cpuCurrentThread: null,
@@ -93,12 +99,29 @@ export const useSimStore = create((set, get) => ({
   ...DEFAULT_SIM,
 
   // ── Config setters ──────────────────────────
-  setNumUserThreads: (n) => set({ numUserThreads: n }),
+  setNumUserThreads: (n) => {
+    const clamped = Math.max(1, Math.min(10, n));
+    set((s) => ({
+      numUserThreads: clamped,
+      threadConfigs: buildDefaultConfigs(clamped, s.threadConfigs),
+    }));
+  },
+
   setModel: (m) => set({ model: m }),
-  setArrivalMode: (a) => set({ arrivalMode: a }),
   setAlgorithm: (a) => set({ algorithm: a }),
   setTimeQuantum: (q) => set({ timeQuantum: q }),
   setSpeed: (s) => set({ speed: s }),
+
+  // ── Thread config editing ────────────────────
+  setThreadConfigs: (configs) => set({ threadConfigs: configs }),
+
+  updateThreadConfig: (id, field, value) => {
+    set((s) => ({
+      threadConfigs: s.threadConfigs.map((cfg) =>
+        cfg.id === id ? { ...cfg, [field]: value } : cfg
+      ),
+    }));
+  },
 
   // ── Derived getters ─────────────────────────
   getKernelCount: () => {
@@ -108,9 +131,11 @@ export const useSimStore = create((set, get) => ({
 
   // ── Create threads (called before sim start) ─
   createSimulation: () => {
-    const { numUserThreads, model, arrivalMode, timeQuantum } = get();
+    const { numUserThreads, model, threadConfigs, timeQuantum } = get();
     const kCount = getKernelCount(model, numUserThreads);
-    const userThreads = buildUserThreads(numUserThreads, arrivalMode);
+    // Use the user-defined configs (arrival & burst)
+    const configs = threadConfigs.slice(0, numUserThreads);
+    const userThreads = buildUserThreads(configs);
     const kernelThreads = buildKernelThreads(kCount);
     const mappings = buildMappings(model, userThreads, kernelThreads);
 
@@ -126,12 +151,12 @@ export const useSimStore = create((set, get) => ({
 
   // ── Playback controls ────────────────────────
   startSim: () => {
-    const { isRunning, userThreads } = get();
+    const { userThreads } = get();
     if (userThreads.length === 0) get().createSimulation();
-    // Re-read after possible createSimulation
     set((s) => ({
       isRunning: true,
       isPaused: false,
+      simulationCompleted: false,
       eventLogs: [...s.eventLogs, makeLog('Simulation STARTED.')],
     }));
   },
@@ -153,10 +178,10 @@ export const useSimStore = create((set, get) => ({
   },
 
   resetSim: () => {
-    set((s) => ({
+    set({
       ...DEFAULT_SIM,
       eventLogs: [makeLog('Simulation RESET.')],
-    }));
+    });
   },
 
   stopSim: () => {
@@ -218,7 +243,6 @@ export const useSimStore = create((set, get) => ({
     } else if (algorithm === 'Round Robin') {
       const { nextId, shouldPreempt } = roundRobin(newReadyQueue, newThreads, newQuantum);
       if (shouldPreempt && newCpuThread) {
-        // Preempt: move current thread to back of queue
         const preempted = newThreads.find(t => t.id === newCpuThread);
         if (preempted && preempted.state === 'RUNNING') {
           preempted.state = 'READY';
@@ -229,7 +253,6 @@ export const useSimStore = create((set, get) => ({
         newQuantum = timeQuantum;
         newCpuThread = null;
       }
-      // Re-pick after possible preemption
       chosenId = newReadyQueue[0] ?? null;
     } else if (algorithm === 'SJF') {
       chosenId = sjf(newReadyQueue, newThreads);
@@ -240,7 +263,6 @@ export const useSimStore = create((set, get) => ({
     if (chosenId) {
       const running = newThreads.find(t => t.id === chosenId);
       if (running) {
-        // Context switch log
         if (newCpuThread !== chosenId) {
           newLogs.push(makeLog(`${chosenId} → RUNNING on CPU`));
         }
@@ -250,15 +272,12 @@ export const useSimStore = create((set, get) => ({
         running.totalRunTime += 1;
         newReadyQueue = newReadyQueue.filter(id => id !== chosenId);
         if (algorithm === 'Round Robin') newQuantum -= 1;
-
-        // Update kernel thread assignment
         const kernelId = mappings[chosenId];
         for (const k of newKernelThreads) {
           if (k.id === kernelId) k.currentUserThread = chosenId;
           else if (k.currentUserThread === chosenId) k.currentUserThread = null;
         }
 
-        // Gantt entry
         const lastEntry = newGantt[newGantt.length - 1];
         if (lastEntry && lastEntry.threadId === chosenId && lastEntry.end === newTime - 1) {
           newGantt[newGantt.length - 1] = { ...lastEntry, end: newTime };
@@ -266,7 +285,8 @@ export const useSimStore = create((set, get) => ({
           newGantt.push({ threadId: chosenId, start: newTime - 1, end: newTime, color: running.color });
         }
 
-        // Random blocking (8% chance per tick when RUNNING, skip if remainingTime<=1)
+        // Random blocking (8% chance per tick)
+
         if (running.remainingTime > 1 && Math.random() < 0.08) {
           running.state = 'BLOCKED';
           running.blockedBy = `S${Math.floor(Math.random() * 3) + 1}`;
@@ -296,13 +316,13 @@ export const useSimStore = create((set, get) => ({
       newCpuThread = null;
     }
 
-    // 5. CPU utilization (% ticks CPU was active in last 30 ticks)
+    // 5. CPU utilization
     const utilized = chosenId ? 1 : 0;
     const recentUtil = [
       ...cpuUtilHistory.slice(-29),
       { t: newTime, util: utilized ? 100 : 0 },
     ];
-    // Smooth rolling average
+
     const window30 = recentUtil.slice(-30);
     const avg = Math.round(window30.reduce((s, e) => s + e.util, 0) / window30.length);
     const newCpuHistory = [...cpuUtilHistory.slice(-59), { t: newTime, util: avg }];
@@ -317,6 +337,8 @@ export const useSimStore = create((set, get) => ({
     set({
       time: newTime,
       isRunning: allDone ? false : true,
+      isPaused: false,
+      simulationCompleted: allDone ? true : false,
       userThreads: newThreads,
       kernelThreads: newKernelThreads,
       readyQueue: newReadyQueue,

@@ -1,5 +1,5 @@
 // src/App.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameLoop } from './engine/gameLoop';
 import ControlPanel from './components/controls/ControlPanel';
 import ThreadMapper from './components/visualization/ThreadMapper';
@@ -7,6 +7,7 @@ import StateLegend from './components/visualization/StateLegend';
 import GanttChart from './components/scheduling/GanttChart';
 import ReadyQueuePanel from './components/scheduling/ReadyQueuePanel';
 import RightSidebar from './components/metrics/RightSidebar';
+import ToastNotification from './components/ToastNotification';
 import { useSimStore } from './store/simulationStore';
 
 function CenterPanel() {
@@ -43,7 +44,7 @@ function CenterPanel() {
                   <circle cx="16" cy="16" r="5" fill="#3d3d55" />
                 </svg>
               </div>
-              <p className="text-sm text-gray-600">Configure and press <span className="text-indigo-400 font-semibold">Play</span> or <span className="text-gray-400 font-semibold">Preview</span> to start</p>
+              <p className="text-sm text-gray-600">Configure and press <span className="text-indigo-400 font-semibold">Play</span> to start</p>
             </div>
           ) : (
             <ThreadMapper />
@@ -68,14 +69,32 @@ function CenterPanel() {
 }
 
 export default function App() {
-  // Activate the game loop globally
   useGameLoop();
+
+  const simulationCompleted = useSimStore(s => s.simulationCompleted);
+  const resetSim = useSimStore(s => s.resetSim);
+  const [showToast, setShowToast] = useState(false);
+
+  // Trigger toast when simulation completes
+  useEffect(() => {
+    if (simulationCompleted) {
+      setShowToast(true);
+    }
+  }, [simulationCompleted]);
+
+  // When user dismisses toast, also clear the completed flag
+  const handleToastDismiss = () => {
+    setShowToast(false);
+    // We don't call resetSim here — just clear the toast state flag
+    useSimStore.setState({ simulationCompleted: false });
+  };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-950 text-gray-100">
       <ControlPanel />
       <CenterPanel />
       <RightSidebar />
+      <ToastNotification show={showToast} onDismiss={handleToastDismiss} />
     </div>
   );
 }
