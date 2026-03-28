@@ -46,6 +46,11 @@ function buildUserThreads(configs) {
     totalRunTime: 0,
     blockedTimer: 0,
     color: `hsl(${(i * 47) % 360}, 70%, 60%)`,
+    // Metrics
+    startTime: null,
+    completionTime: null,
+    waitingTime: 0,
+    responseTime: null,
   }));
 }
 
@@ -139,9 +144,15 @@ export const useSimStore = create((set, get) => ({
     const kernelThreads = buildKernelThreads(kCount);
     const mappings = buildMappings(model, userThreads, kernelThreads);
 
+    // Set mappedTo on each user thread so ThreadTable can display it
+    const userThreadsWithMapping = userThreads.map(t => ({
+      ...t,
+      mappedTo: mappings[t.id] ?? null,
+    }));
+
     set({
       ...DEFAULT_SIM,
-      userThreads,
+      userThreads: userThreadsWithMapping,
       kernelThreads,
       mappings,
       quantumRemaining: timeQuantum,
@@ -213,12 +224,16 @@ export const useSimStore = create((set, get) => ({
     let newKernelThreads = kernelThreads.map(k => ({ ...k }));
 
     // 1. Admit NEW threads whose arrival time has come
+    //    Use >= (not <=) because time is 0-based: at t=0 we check arrivalTime <= 0
+    //    After tick newTime=1, we check arrivalTime <= 1, already missed 0!
+    //    Fix: admit threads where arrivalTime <= newTime - 1 (i.e., arrival <= previous time)
+    //    OR simpler: admit when arrivalTime < newTime (arrival before current tick end)
     for (const t of newThreads) {
-      if (t.state === 'NEW' && t.arrivalTime <= newTime) {
+      if (t.state === 'NEW' && t.arrivalTime < newTime) {
         t.state = 'READY';
         t.remainingTime = t.burstTime;
         if (!newReadyQueue.includes(t.id)) newReadyQueue.push(t.id);
-        newLogs.push(makeLog(`${t.id} → READY (arrived at t=${newTime})`));
+        newLogs.push(makeLog(`${t.id} → READY (arrived at t=${t.arrivalTime})`));
       }
     }
 
@@ -259,7 +274,6 @@ export const useSimStore = create((set, get) => ({
     }
 
     // 4. Run the chosen thread
-    const prevCpuThread = newCpuThread;
     if (chosenId) {
       const running = newThreads.find(t => t.id === chosenId);
       if (running) {
@@ -268,16 +282,28 @@ export const useSimStore = create((set, get) => ({
         }
         newCpuThread = chosenId;
         running.state = 'RUNNING';
+
+        // Track first response time
+        if (running.responseTime === null) {
+          running.responseTime = newTime - 1; // time when it first got CPU
+        }
+        // Track start time
+        if (running.startTime === null) {
+          running.startTime = newTime - 1;
+        }
+
         running.remainingTime = Math.max(0, running.remainingTime - 1);
         running.totalRunTime += 1;
         newReadyQueue = newReadyQueue.filter(id => id !== chosenId);
         if (algorithm === 'Round Robin') newQuantum -= 1;
+
         const kernelId = mappings[chosenId];
         for (const k of newKernelThreads) {
           if (k.id === kernelId) k.currentUserThread = chosenId;
           else if (k.currentUserThread === chosenId) k.currentUserThread = null;
         }
 
+        // Gantt chart: extend or add entry
         const lastEntry = newGantt[newGantt.length - 1];
         if (lastEntry && lastEntry.threadId === chosenId && lastEntry.end === newTime - 1) {
           newGantt[newGantt.length - 1] = { ...lastEntry, end: newTime };
@@ -285,39 +311,46 @@ export const useSimStore = create((set, get) => ({
           newGantt.push({ threadId: chosenId, start: newTime - 1, end: newTime, color: running.color });
         }
 
-        // Random blocking (8% chance per tick)
-
-        if (running.remainingTime > 1 && Math.random() < 0.08) {
-          running.state = 'BLOCKED';
-          running.blockedBy = `S${Math.floor(Math.random() * 3) + 1}`;
-          running.blockedTimer = Math.floor(Math.random() * 6) + 3;
-          newBlockedQueue.push(running.id);
-          newCpuThread = null;
-          const kernelId2 = mappings[running.id];
-          for (const k of newKernelThreads) {
-            if (k.id === kernelId2) k.currentUserThread = null;
-          }
-          newLogs.push(makeLog(`${running.id} BLOCKED (waiting ${running.blockedBy}) for ${running.blockedTimer} ticks`));
-        }
-
-        // Thread completes
-        if (running.remainingTime <= 0 && running.state !== 'BLOCKED') {
+        // Thread completes — check BEFORE random blocking
+        if (running.remainingTime <= 0) {
           running.state = 'TERMINATED';
+          running.completionTime = newTime;
           newCpuThread = null;
           const kernelId3 = mappings[running.id];
           for (const k of newKernelThreads) {
             if (k.id === kernelId3) k.currentUserThread = null;
           }
-          newLogs.push(makeLog(`${running.id} TERMINATED (burst done)`));
+          newLogs.push(makeLog(`${running.id} TERMINATED (burst done) at t=${newTime}`));
           if (algorithm === 'Round Robin') newQuantum = timeQuantum;
+        } else {
+          // Random blocking (6% chance per tick) — only if thread won't complete this tick
+          if (Math.random() < 0.06) {
+            running.state = 'BLOCKED';
+            running.blockedBy = `S${Math.floor(Math.random() * 3) + 1}`;
+            running.blockedTimer = Math.floor(Math.random() * 4) + 2;
+            newBlockedQueue.push(running.id);
+            newCpuThread = null;
+            const kernelId2 = mappings[running.id];
+            for (const k of newKernelThreads) {
+              if (k.id === kernelId2) k.currentUserThread = null;
+            }
+            newLogs.push(makeLog(`${running.id} BLOCKED (waiting ${running.blockedBy}) for ${running.blockedTimer} ticks`));
+          }
         }
       }
     } else {
       newCpuThread = null;
     }
 
-    // 5. CPU utilization
-    const utilized = chosenId ? 1 : 0;
+    // 5. Update waiting time for threads in ready queue
+    for (const t of newThreads) {
+      if (t.state === 'READY') {
+        t.waitingTime = (t.waitingTime || 0) + 1;
+      }
+    }
+
+    // 6. CPU utilization
+    const utilized = newCpuThread ? 1 : 0;
     const recentUtil = [
       ...cpuUtilHistory.slice(-29),
       { t: newTime, util: utilized ? 100 : 0 },
@@ -327,18 +360,23 @@ export const useSimStore = create((set, get) => ({
     const avg = Math.round(window30.reduce((s, e) => s + e.util, 0) / window30.length);
     const newCpuHistory = [...cpuUtilHistory.slice(-59), { t: newTime, util: avg }];
 
-    // 6. Check if all done
-    const allDone = newThreads.every(t => t.state === 'TERMINATED');
+    // 7. Check if all done — only threads that are NOT in NEW state should be checked
+    //    (some threads may not have arrived yet)
+    const nonNewThreads = newThreads.filter(t => t.state !== 'NEW');
+    const allDone =
+      newThreads.length > 0 &&
+      newThreads.every(t => t.state === 'TERMINATED');
+
     if (allDone) {
       newLogs.push(makeLog('All threads TERMINATED. Simulation complete.'));
     }
 
-    // 7. Commit state
+    // 8. Commit state
     set({
       time: newTime,
       isRunning: allDone ? false : true,
       isPaused: false,
-      simulationCompleted: allDone ? true : false,
+      simulationCompleted: allDone,
       userThreads: newThreads,
       kernelThreads: newKernelThreads,
       readyQueue: newReadyQueue,
