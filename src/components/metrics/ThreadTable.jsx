@@ -6,7 +6,6 @@ const STATE_BADGE = {
   NEW:        { bg: '#1e293b', text: '#94a3b8', label: 'NEW' },
   READY:      { bg: '#052e16', text: '#22c55e', label: 'READY' },
   RUNNING:    { bg: '#1e3a8a', text: '#60a5fa', label: 'RUN' },
-  BLOCKED:    { bg: '#450a0a', text: '#f87171', label: 'BLKD' },
   TERMINATED: { bg: '#111118', text: '#374151', label: 'DONE' },
 };
 
@@ -14,8 +13,8 @@ export default function ThreadTable() {
   const { userThreads } = useSimStore();
 
   const sorted = [...userThreads].sort((a, b) => {
-    const order = { RUNNING: 0, READY: 1, BLOCKED: 2, NEW: 3, TERMINATED: 4 };
-    return (order[a.state] ?? 5) - (order[b.state] ?? 5);
+    const order = { RUNNING: 0, READY: 1, NEW: 2, TERMINATED: 3 };
+    return (order[a.state] ?? 9) - (order[b.state] ?? 9);
   });
 
   return (
@@ -41,7 +40,6 @@ export default function ThreadTable() {
                   key={t.id}
                   className={`border-b border-gray-800 transition-colors ${
                     t.state === 'RUNNING' ? 'bg-blue-950/30' :
-                    t.state === 'BLOCKED' ? 'bg-red-950/20' :
                     i % 2 === 0 ? 'bg-gray-900/30' : ''
                   }`}
                 >

@@ -1,6 +1,6 @@
 // src/components/metrics/ResultsModal.jsx
 import React from 'react';
-import { X, Award, Clock, TrendingUp, Zap, CheckCircle } from 'lucide-react';
+import { X, Award, Clock, TrendingUp, Zap, CheckCircle, ArrowLeftRight } from 'lucide-react';
 import { useSimStore } from '../../store/simulationStore';
 
 function avg(arr) {
@@ -13,7 +13,7 @@ function fmtAvg(val) {
 }
 
 export default function ResultsModal({ onClose }) {
-  const { userThreads, algorithm, model, time } = useSimStore();
+  const { userThreads, algorithm, model, time, contextSwitches } = useSimStore();
 
   // Compute per-thread metrics
   const rows = userThreads.map(t => {
@@ -24,17 +24,7 @@ export default function ResultsModal({ onClose }) {
     const turnaround = completion - arrival;
     const waiting = Math.max(0, turnaround - burst);
     const response = t.responseTime != null ? t.responseTime - arrival : 0;
-    return {
-      id: t.id,
-      color: t.color,
-      arrival,
-      burst,
-      start,
-      completion,
-      turnaround,
-      waiting,
-      response,
-    };
+    return { id: t.id, color: t.color, arrival, burst, start, completion, turnaround, waiting, response };
   });
 
   const avgTurnaround = avg(rows.map(r => r.turnaround));
@@ -63,7 +53,7 @@ export default function ResultsModal({ onClose }) {
         className="relative flex flex-col rounded-2xl border border-gray-700 shadow-2xl overflow-hidden"
         style={{
           background: 'linear-gradient(150deg, #0f0f1a 0%, #11172a 50%, #0f1220 100%)',
-          width: 'min(92vw, 820px)',
+          width: 'min(92vw, 860px)',
           maxHeight: '88vh',
         }}
       >
@@ -71,7 +61,7 @@ export default function ResultsModal({ onClose }) {
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-600 via-purple-500 to-pink-500" />
 
         {/* Header */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-800">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-800 shrink-0">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg">
             <Award size={18} className="text-white" />
           </div>
@@ -89,24 +79,27 @@ export default function ResultsModal({ onClose }) {
           </button>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-4 gap-3 px-6 pt-4 pb-2 shrink-0">
+        {/* Summary Cards — 5 cards in a row */}
+        <div className="grid grid-cols-5 gap-3 px-6 pt-4 pb-2 shrink-0">
           {[
             { label: 'Avg Turnaround', value: fmtAvg(avgTurnaround), unit: ' ticks', icon: TrendingUp, color: '#6366f1' },
             { label: 'Avg Waiting', value: fmtAvg(avgWaiting), unit: ' ticks', icon: Clock, color: '#f59e0b' },
             { label: 'Avg Response', value: fmtAvg(avgResponse), unit: ' ticks', icon: Zap, color: '#22c55e' },
             { label: 'Avg Burst', value: fmtAvg(avgBurst), unit: ' ticks', icon: CheckCircle, color: '#a855f7' },
+            { label: 'Context Switches', value: contextSwitches - 1, unit: '', icon: ArrowLeftRight, color: '#f97316' },
           ].map(card => (
-            <div key={card.label}
+            <div
+              key={card.label}
               className="rounded-xl border border-gray-800 p-3 flex flex-col gap-1"
-              style={{ background: 'rgba(255,255,255,0.03)' }}>
+              style={{ background: 'rgba(255,255,255,0.03)' }}
+            >
               <div className="flex items-center gap-1.5">
                 <card.icon size={12} style={{ color: card.color }} />
-                <span className="text-xs text-gray-500">{card.label}</span>
+                <span className="text-xs text-gray-500 leading-tight">{card.label}</span>
               </div>
               <span className="text-xl font-bold" style={{ color: card.color }}>
                 {card.value}
-                <span className="text-xs font-normal text-gray-600 ml-0.5">{card.unit}</span>
+                {card.unit && <span className="text-xs font-normal text-gray-600 ml-0.5">{card.unit}</span>}
               </span>
             </div>
           ))}
@@ -119,9 +112,11 @@ export default function ResultsModal({ onClose }) {
               <thead>
                 <tr className="bg-gray-900 border-b border-gray-800 sticky top-0">
                   {cols.map(c => (
-                    <th key={c.key}
+                    <th
+                      key={c.key}
                       className="px-3 py-2.5 font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap"
-                      style={{ textAlign: c.align }}>
+                      style={{ textAlign: c.align }}
+                    >
                       {c.label}
                     </th>
                   ))}
@@ -129,8 +124,10 @@ export default function ResultsModal({ onClose }) {
               </thead>
               <tbody className="divide-y divide-gray-800/60">
                 {rows.map((row, i) => (
-                  <tr key={row.id}
-                    className={`transition-colors ${i % 2 === 0 ? 'bg-gray-900/20' : ''} hover:bg-indigo-950/20`}>
+                  <tr
+                    key={row.id}
+                    className={`transition-colors ${i % 2 === 0 ? 'bg-gray-900/20' : ''} hover:bg-indigo-950/20`}
+                  >
                     <td className="px-3 py-2.5 font-bold" style={{ color: row.color }}>
                       <span className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: row.color }} />
@@ -162,12 +159,29 @@ export default function ResultsModal({ onClose }) {
             </table>
           </div>
 
-          {/* Metric legend */}
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-600">
-            <div><span className="text-gray-500 font-medium">Turnaround</span> = Completion − Arrival</div>
-            <div><span className="text-gray-500 font-medium">Waiting</span> = Turnaround − Burst</div>
-            <div><span className="text-gray-500 font-medium">Response</span> = First CPU time − Arrival</div>
-            <div><span className="text-gray-500 font-medium">Completion</span> = Time thread finished</div>
+          {/* Context switches detail + formula legend */}
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {/* Context switch info box */}
+            <div
+              className="rounded-xl border border-orange-500/20 p-3 flex items-center gap-3"
+              style={{ background: 'rgba(249,115,22,0.07)' }}
+            >
+              <ArrowLeftRight size={16} className="text-orange-400 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-orange-300">{contextSwitches - 1} Context Switches</p>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Each time the CPU switched from one thread to another
+                </p>
+              </div>
+            </div>
+
+            {/* Metric formulas */}
+            <div className="grid grid-cols-2 gap-1.5 text-xs text-gray-600">
+              <div><span className="text-gray-500 font-medium">Turnaround</span> = CT − AT</div>
+              <div><span className="text-gray-500 font-medium">Waiting</span> = TAT − BT</div>
+              <div><span className="text-gray-500 font-medium">Response</span> = ST − AT</div>
+              <div><span className="text-gray-500 font-medium">Completion</span> = tick when done</div>
+            </div>
           </div>
         </div>
       </div>

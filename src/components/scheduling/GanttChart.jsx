@@ -1,8 +1,6 @@
 // src/components/scheduling/GanttChart.jsx
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useSimStore } from '../../store/simulationStore';
-import SchedulingTableModal from './SchedulingTableModal';
-import { TableIcon } from 'lucide-react';
 
 const PX_PER_TICK = 28;
 const ROW_H = 40;
@@ -12,7 +10,6 @@ const TIME_AXIS_H = 28; // space below row for time labels
 export default function GanttChart() {
   const { ganttEntries, time, userThreads, simulationCompleted } = useSimStore();
   const scrollRef = useRef(null);
-  const [showTable, setShowTable] = useState(false);
 
   // Auto-scroll right while simulation runs
   useEffect(() => {
@@ -151,22 +148,6 @@ export default function GanttChart() {
           )}
         </svg>
       </div>
-
-      {/* ── CPU Scheduling Table button — shown only after completion ── */}
-      {simulationCompleted && (
-        <div className="shrink-0 px-3 py-2 border-t border-gray-800 flex justify-center">
-          <button
-            onClick={() => setShowTable(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all active:scale-95 shadow-lg shadow-indigo-900/40"
-          >
-            <TableIcon size={14} />
-            CPU Scheduling Table
-          </button>
-        </div>
-      )}
-
-      {/* Modal */}
-      {showTable && <SchedulingTableModal onClose={() => setShowTable(false)} />}
     </div>
   );
 }

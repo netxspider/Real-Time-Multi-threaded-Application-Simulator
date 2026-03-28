@@ -57,8 +57,10 @@ const SPEED_OPTIONS = [
 export default function ControlPanel() {
   const {
     numUserThreads, model, algorithm, timeQuantum, speed, threadConfigs,
+    priorityMode,
     isRunning, isPaused, userThreads,
     setNumUserThreads, setModel, setAlgorithm, setTimeQuantum, setSpeed,
+    setPriorityMode,
     createSimulation, startSim, pauseSim, resumeSim, resetSim,
   } = useSimStore();
 
@@ -139,10 +141,11 @@ export default function ControlPanel() {
             label="Scheduling Algorithm"
             value={algorithm}
             onChange={setAlgorithm}
-            options={['Round Robin', 'FCFS', 'SJF']}
+            options={['Round Robin', 'FCFS', 'SJF', 'SRTF', 'Priority']}
             disabled={isRunning}
           />
 
+          {/* Round Robin: time quantum slider */}
           {algorithm === 'Round Robin' && (
             <Slider
               label="Time Quantum"
@@ -152,6 +155,38 @@ export default function ControlPanel() {
               unit=" ticks"
               disabled={isRunning}
             />
+          )}
+
+          {/* Priority mode: toggle lowest/highest */}
+          {algorithm === 'Priority' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Priority Mode</label>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { value: 'lowest',  label: 'Low # Wins', desc: '1 > 10' },
+                  { value: 'highest', label: 'High # Wins', desc: '10 > 1' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setPriorityMode(opt.value)}
+                    disabled={isRunning}
+                    className={`flex flex-col items-center py-2 px-1 rounded-lg text-xs font-semibold transition-all border disabled:opacity-40 ${
+                      priorityMode === opt.value
+                        ? 'bg-violet-600 border-violet-500 text-white shadow shadow-violet-900/40'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    <span className="text-xs opacity-60 font-mono mt-0.5">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600">
+                {priorityMode === 'lowest'
+                  ? 'Smallest priority number = highest precedence'
+                  : 'Largest priority number = highest precedence'}
+              </p>
+            </div>
           )}
         </section>
 
@@ -178,6 +213,9 @@ export default function ControlPanel() {
                   <th className="text-left text-gray-500 font-semibold px-2 py-1.5 w-12">Thread</th>
                   <th className="text-center text-gray-500 font-semibold px-2 py-1.5">Arrival</th>
                   <th className="text-center text-gray-500 font-semibold px-2 py-1.5">Burst</th>
+                  {algorithm === 'Priority' && (
+                    <th className="text-center text-gray-500 font-semibold px-2 py-1.5">Pri</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/60">
@@ -193,6 +231,9 @@ export default function ControlPanel() {
                     </td>
                     <td className="px-2 py-1.5 text-center font-mono text-gray-300">{cfg.arrivalTime}<span className="text-gray-600 ml-0.5">t</span></td>
                     <td className="px-2 py-1.5 text-center font-mono text-gray-300">{cfg.burstTime}<span className="text-gray-600 ml-0.5">τ</span></td>
+                    {algorithm === 'Priority' && (
+                      <td className="px-2 py-1.5 text-center font-mono text-violet-400 font-bold">{cfg.priority ?? (idx + 1)}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

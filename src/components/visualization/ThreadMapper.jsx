@@ -8,7 +8,6 @@ const STATE_COLORS = {
   NEW: '#64748b',
   READY: '#22c55e',
   RUNNING: '#3b82f6',
-  BLOCKED: '#ef4444',
   TERMINATED: '#1f2937',
 };
 
@@ -90,10 +89,6 @@ export default function ThreadMapper() {
             <feGaussianBlur stdDeviation="4" result="coloredBlur" />
             <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <filter id="glow-blocked">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
           <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
             <path d="M0,0 L0,6 L6,3 z" fill="#4f46e5" />
           </marker>
@@ -141,7 +136,6 @@ export default function ThreadMapper() {
         {userPositions.map(({ x, y, thread }) => {
           const color = STATE_COLORS[thread.state] || '#64748b';
           const isRunning = thread.state === 'RUNNING';
-          const isBlocked = thread.state === 'BLOCKED';
           const isTerminated = thread.state === 'TERMINATED';
           const isNew = thread.state === 'NEW';
           return (
@@ -155,7 +149,7 @@ export default function ThreadMapper() {
                 stroke={isTerminated ? '#374151' : color}
                 strokeWidth="2"
                 opacity={isTerminated ? 0.4 : isNew ? 0.7 : 1}
-                filter={isRunning ? 'url(#glow-running)' : isBlocked ? 'url(#glow-blocked)' : ''}
+                filter={isRunning ? 'url(#glow-running)' : ''}
               />
               <text textAnchor="middle" dominantBaseline="central"
                 fontSize="8" fontWeight="bold"

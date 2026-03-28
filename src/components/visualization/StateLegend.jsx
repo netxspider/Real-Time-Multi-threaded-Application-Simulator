@@ -5,7 +5,6 @@ const STATES = [
   { label: 'New',        color: '#64748b', desc: 'In Job Queue' },
   { label: 'Ready',      color: '#22c55e', desc: 'Waiting for CPU' },
   { label: 'Running',    color: '#3b82f6', desc: 'On CPU' },
-  { label: 'Blocked',    color: '#ef4444', desc: 'Waiting on resource' },
   { label: 'Terminated', color: '#374151', desc: 'Completed' },
 ];
 

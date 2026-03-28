@@ -7,8 +7,7 @@ const STATE_META = [
   { state: 'NEW',        color: '#64748b', label: 'New' },
   { state: 'READY',      color: '#22c55e', label: 'Ready' },
   { state: 'RUNNING',    color: '#3b82f6', label: 'Run' },
-  { state: 'BLOCKED',    color: '#ef4444', label: 'Block' },
-  { state: 'TERMINATED', color: '#374151', label: 'Done' },
+  { state: 'TERMINATED', color: '#4b5563', label: 'Done' },
 ];
 
 const CustomTooltip = ({ active, payload }) => {
