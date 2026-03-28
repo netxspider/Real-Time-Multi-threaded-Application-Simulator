@@ -86,3 +86,79 @@ body {
 .flow-line {
   animation: flow-dash 0.6s linear infinite;
 }
+
+/* ─── Sync Simulator Animations ──────────────────────────────────────────── */
+
+@keyframes thread-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.thread-enter {
+  animation: thread-enter 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes thread-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.7) translateY(6px);
+  }
+}
+
+.thread-exit {
+  animation: thread-exit 0.4s ease-in forwards;
+}
+
+@keyframes cs-slot-active {
+  0%, 100% { box-shadow: 0 0 12px rgba(99,102,241,0.3); }
+  50%       { box-shadow: 0 0 28px rgba(99,102,241,0.6); }
+}
+
+.cs-slot-active {
+  animation: cs-slot-active 1.6s ease-in-out infinite;
+}
+
+@keyframes sync-glow-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+.sync-thread-glow {
+  animation: sync-glow-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wakeup-flash {
+  0%   { background-color: rgba(34,197,94,0.25); }
+  50%  { background-color: rgba(34,197,94,0.08); }
+  100% { background-color: transparent; }
+}
+
+.wakeup-flash {
+  animation: wakeup-flash 0.8s ease-out forwards;
+}
+
+@keyframes blocked-shake {
+  0%, 100% { transform: translateX(0); }
+  25%       { transform: translateX(-3px); }
+  75%       { transform: translateX(3px); }
+}
+
+.blocked-shake {
+  animation: blocked-shake 0.4s ease-in-out;
+}
+
+/* Smooth scrollbar for sync panels */
+.sync-scroll::-webkit-scrollbar { width: 3px; }
+.sync-scroll::-webkit-scrollbar-track { background: transparent; }
+.sync-scroll::-webkit-scrollbar-thumb { background: #3d3d55; border-radius: 2px; }
+
